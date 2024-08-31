@@ -1,0 +1,23 @@
+{
+  "name": "movie-voting-contract",
+  "version": "1.0.0",
+  "description": "Assignment for the Solidity course in the Blockchain Developer Program @ Medieinstitutet",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/G-jacobsson/solidity_movie_voting_contract.git"
+  },
+  "author": "G-O Jacobsson",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/G-jacobsson/solidity_movie_voting_contract/issues"
+  },
+  "homepage": "https://github.com/G-jacobsson/solidity_movie_voting_contract#readme",
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^5.0.0",
+    "hardhat": "^2.22.9"
+  }
+}
