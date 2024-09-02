@@ -28,6 +28,11 @@ contract MovieSurveyCreator {
         _;
     }
 
+   modifier onlySurveyCreator() {
+        require(msg.sender == surveys[surveyId].creator, "You are not the survey creator and can not perform this action!");
+        _;
+    }
+
     constructor() {
         owner = msg.sender;
         surveyId = 0;
