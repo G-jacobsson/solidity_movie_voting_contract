@@ -5,7 +5,7 @@ contract MovieSurveyCreator {
     enum SurveyStatus { Created, Ongoing, Ended }
 
     struct Survey {
-        address creator; // Address of survey creator
+        address surveyCreator; // Address of survey creator
         string genre;
         string[] movies;
         mapping(string => uint256) votes;
@@ -16,25 +16,25 @@ contract MovieSurveyCreator {
         uint256 winningMovieId;
     }
     
-    address public owner; // Address of the contract owner
+    address public contractOwner; // Address of the contract owner
     uint256 public surveyId;
     mapping(uint256 => Survey) surveys;
     mapping(address => uint256[]) users;
 
-    event SurveyCreated(uint256 surveyId, address creator);
+    event SurveyCreated(uint256 surveyId, address surveyCreator);
 
-    modifier onlyOwner() {
-        require(msg.sender == owner, "Only the owner can perform this action");
+    modifier onlyContractOwner() {
+        require(msg.sender == contractOwner, "Only the owner can perform this action");
         _;
     }
 
-   modifier onlySurveyCreator() {
-        require(msg.sender == surveys[surveyId].creator, "You are not the survey creator and can not perform this action!");
+    modifier onlySurveyCreator() {
+        require(msg.sender == surveys[surveyId].surveyCreator, "You are not the survey creator and can not perform this action!");
         _;
     }
 
     constructor() {
-        owner = msg.sender;
+        contractOwner = msg.sender;
         surveyId = 0;
     }
 
@@ -77,6 +77,18 @@ contract MovieSurveyCreator {
         return surveyId;
     }
 
+    function startSurvey(uint256 _surveyId) external onlySurveyCreator() {
+        require(surveys[_surveyId].status == SurveyStatus.Created);
+        require(surveys[_surveyId].startTime == 0);
+        require(msg.sender == surveys[_surveyId].creator);
+
+        Survey storage survey = surveys[_surveyId];
+
+        survey.startTime = block.timestamp;
+        survey.status = SurveyStatus.Ongoing;
+
+        emit SurveyStarted(surveyId);
+    }
 
 
 }
