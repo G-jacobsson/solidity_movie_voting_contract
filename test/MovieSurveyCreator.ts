@@ -361,7 +361,6 @@ describe('MovieSurveyCreator', function () {
         await deployMovieSurveyCreatorFixture();
 
       await movieSurveyCreator.connect(contractOwner).pause();
-      console.log(contractOwner.address);
 
       await expect(
         movieSurveyCreator
