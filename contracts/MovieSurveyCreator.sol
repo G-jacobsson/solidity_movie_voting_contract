@@ -27,28 +27,52 @@ contract MovieSurveyCreator is ReentrancyGuard, Pausable {
     }
 
     /**************************** STATE VARIABLES ****************************/
-    address public contractOwner; // Address of the contract owner
-    uint256 public surveyId;
-    mapping(uint256 => Survey) public surveys;
-    mapping(uint256 => mapping(address => bool)) public hasVoted;
-    mapping(uint256 => mapping(uint256 => uint256)) public votes;
-    mapping(address => uint256[]) public users;
+    address private contractOwner; // Address of the contract owner
+    uint256 private surveyId; // ID Counter for surveys
+    uint256 public constant MAX_SURVEY_DURATION = 604800; // 1 week in seconds
+    mapping(uint256 => Survey) private surveys;
+    mapping(uint256 => mapping(address => bool)) private hasVoted;
+    mapping(uint256 => mapping(uint256 => uint256)) private votes;
+    mapping(address => uint256[]) private userSurveys;
 
     /**************************** EVENTS ****************************/
     event SurveyCreated(uint256 surveyId, address indexed surveyCreator);
     event SurveyStarted(uint256 surveyId);
+    event SurveyEnded(uint256 indexed surveyId, uint256 winningMovieId, uint256 winningMovieVotes);
     event Voted(uint256 surveyId, string movie, address indexed voter);
     event ContractPaused(address indexed by);
     event ContractUnpaused(address indexed by);
 
+    /**************************** CUSTOM ERRORS ****************************/
+    error Unauthorized();
+    error SurveyAlreadyStarted();
+    error SurveyNotStarted();
+    error SurveyHasEnded();
+    error InvalidMovieId();
+    error AlreadyVoted();
+    error SurveyCreatorCannotVote();
+    error SurveyDoesNotExist();
+
     /**************************** MODIFIERS ****************************/
     modifier onlyContractOwner() {
-        require(msg.sender == contractOwner, "Only the owner can perform this action");
+        if (msg.sender != contractOwner) revert Unauthorized();
         _;
     }
 
     modifier onlySurveyCreator(uint256 _surveyId) {
-        require(msg.sender == surveys[_surveyId].surveyCreator, "You are not the survey creator and cannot perform this action");
+        if (msg.sender != surveys[_surveyId].surveyCreator) revert Unauthorized();
+        _;
+    }
+
+    modifier surveyExists(uint256 _surveyId) {
+        if (surveys[_surveyId].surveyCreator == address(0)) revert SurveyDoesNotExist();
+        _;
+    }
+
+    modifier surveyOngoing(uint256 _surveyId) {
+        Survey storage survey = surveys[_surveyId];
+        if (survey.status != SurveyStatus.Ongoing) revert SurveyNotStarted();
+        if (survey.startTime + survey.duration <= block.timestamp) revert SurveyHasEnded();
         _;
     }
 
@@ -59,7 +83,7 @@ contract MovieSurveyCreator is ReentrancyGuard, Pausable {
     /**************************** FUNCTIONS ****************************/
     function createSurvey(string calldata _genre, string[] calldata _movies, uint256 _duration) external returns (uint256) {
         require(_movies.length > 0, "At least one movie is required for a survey.");
-        require(_duration > 0, "Duration of survey must be greater than 0");
+        require(_duration > 0 && _duration <= MAX_SURVEY_DURATION, "Invalid survey duration.");
 
         ++surveyId;
 
@@ -77,18 +101,18 @@ contract MovieSurveyCreator is ReentrancyGuard, Pausable {
             newSurvey.movies.push(_movies[i]);
         }
 
-        users[msg.sender].push(surveyId);
+        userSurveys[msg.sender].push(surveyId);
 
         emit SurveyCreated(surveyId, msg.sender);
 
         return surveyId;
     }
 
-    function startSurvey(uint256 _surveyId) external onlySurveyCreator(_surveyId) whenNotPaused {
+    function startSurvey(uint256 _surveyId) external onlySurveyCreator(_surveyId) whenNotPaused surveyExists(_surveyId) {
         Survey storage survey = surveys[_surveyId];
 
-        require(survey.status == SurveyStatus.Created, "Survey has already started or ended");
-        require(survey.startTime == 0, "Survey has already started");
+        if (survey.status != SurveyStatus.Created) revert SurveyAlreadyStarted();
+        if(survey.startTime != 0) revert SurveyAlreadyStarted();
 
         survey.startTime = block.timestamp;
         survey.status = SurveyStatus.Ongoing;
@@ -96,17 +120,23 @@ contract MovieSurveyCreator is ReentrancyGuard, Pausable {
         emit SurveyStarted(_surveyId);
     }
 
-    function vote(uint256 _surveyId, uint256 _movieId) external nonReentrant whenNotPaused {
+    function endSurvey(uint256 _surveyId) external onlySurveyCreator(_surveyId) surveyExists(_surveyId) {
+        Survey storage survey = surveys[_surveyId];
+        if (survey.status != SurveyStatus.Ongoing) revert SurveyNotStarted();
+
+        survey.status = SurveyStatus.Ended;
+
+        emit SurveyEnded(_surveyId, survey.winningMovieId, survey.winningMovieVotes);
+    }
+
+    function vote(uint256 _surveyId, uint256 _movieId) external nonReentrant whenNotPaused surveyExists(_surveyId) surveyOngoing(_surveyId) {
         Survey storage survey = surveys[_surveyId];
 
-        require(survey.status == SurveyStatus.Ongoing, "Survey is not ongoing");
-        require(survey.startTime + survey.duration > block.timestamp, "Survey has ended");
-        require(_movieId < survey.movies.length, "Invalid movie ID");
-        require(!hasVoted[_surveyId][msg.sender], "You have already voted in this survey");
-        require(msg.sender != survey.surveyCreator, "Survey creator cannot vote");
+        if (_movieId >= survey.movies.length) revert InvalidMovieId();
+        if (hasVoted[_surveyId][msg.sender]) revert AlreadyVoted();
+        if (msg.sender == survey.surveyCreator) revert SurveyCreatorCannotVote();
 
         hasVoted[_surveyId][msg.sender] = true;
-
         votes[_surveyId][_movieId] += 1;
         survey.totalVotes += 1;
 
@@ -115,19 +145,22 @@ contract MovieSurveyCreator is ReentrancyGuard, Pausable {
             survey.winningMovieVotes = votes[_surveyId][_movieId];
         }
 
+        // check that the user is recorded as having voted
+        assert(hasVoted[_surveyId][msg.sender]);
+
         emit Voted(_surveyId, survey.movies[_movieId], msg.sender);
     }
 
-    function getSurvey(uint256 _surveyId) external view returns (address _surveyCreator, string memory _genre, string[] memory _movies, uint256 _startTime, uint256 _duration) {
+    function getSurvey(uint256 _surveyId) external view surveyExists(_surveyId) returns (address _surveyCreator, string memory _genre, string[] memory _movies, uint256 _startTime, uint256 _duration) {
         Survey storage survey = surveys[_surveyId];
-        require(survey.status == SurveyStatus.Ongoing, "Survey is not ongoing");
+
+        if (survey.status != SurveyStatus.Ongoing) revert SurveyNotStarted();
 
         return (survey.surveyCreator, survey.genre, survey.movies, survey.startTime, survey.duration);
     }
 
-    function getCurrentLeadingMovie(uint256 _surveyId) external view returns (string memory, uint256) {
+    function getCurrentLeadingMovie(uint256 _surveyId) external view surveyExists(_surveyId) surveyOngoing(_surveyId) returns (string memory, uint256) {
         Survey storage survey = surveys[_surveyId];
-        require(survey.status == SurveyStatus.Ongoing, "Survey is not ongoing");
 
         return (survey.movies[survey.winningMovieId], survey.winningMovieVotes);
     }
