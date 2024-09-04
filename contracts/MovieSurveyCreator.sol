@@ -27,7 +27,7 @@ contract MovieSurveyCreator is ReentrancyGuard, Pausable {
     }
 
     /**************************** STATE VARIABLES ****************************/
-    address private contractOwner; // Address of the contract owner
+    address public contractOwner; // Address of the contract owner
     uint256 private surveyId; // ID Counter for surveys
     uint256 public constant MAX_SURVEY_DURATION = 604800; // 1 week in seconds
     mapping(uint256 => Survey) private surveys;
@@ -81,6 +81,15 @@ contract MovieSurveyCreator is ReentrancyGuard, Pausable {
     }
 
     /**************************** FUNCTIONS ****************************/
+
+    /**
+     * @notice This function allows the survey creator to create a new movie survey.
+     * @dev The survey creator is the only one who can call this function. The survey creation is paused while the contract is in paused state.
+     * @param _genre The genre of the movies in the survey.
+     * @param _movies An array of strings representing the movies in the survey.
+     * @param _duration The duration of the survey in seconds.
+     * @return Returns the ID of the newly created survey.
+     */
     function createSurvey(string calldata _genre, string[] calldata _movies, uint256 _duration) external returns (uint256) {
         require(_movies.length > 0, "At least one movie is required for a survey.");
         require(_duration > 0 && _duration <= MAX_SURVEY_DURATION, "Invalid survey duration.");
@@ -108,6 +117,11 @@ contract MovieSurveyCreator is ReentrancyGuard, Pausable {
         return surveyId;
     }
 
+    /**
+     * @notice This function starts the given survey.
+     * @dev The survey creator is the only one who can call this function. The survey start is paused while the contract is in paused state.
+     * @param _surveyId The ID of the survey to start.
+     */
     function startSurvey(uint256 _surveyId) external onlySurveyCreator(_surveyId) whenNotPaused surveyExists(_surveyId) {
         Survey storage survey = surveys[_surveyId];
 
@@ -120,6 +134,11 @@ contract MovieSurveyCreator is ReentrancyGuard, Pausable {
         emit SurveyStarted(_surveyId);
     }
 
+    /**
+     * @notice This function ends the given survey.
+     * @dev The survey creator is the only one who can call this function.
+     * @param _surveyId The ID of the survey to end.
+     */
     function endSurvey(uint256 _surveyId) external onlySurveyCreator(_surveyId) surveyExists(_surveyId) {
         Survey storage survey = surveys[_surveyId];
         if (survey.status != SurveyStatus.Ongoing) revert SurveyNotStarted();
@@ -129,6 +148,12 @@ contract MovieSurveyCreator is ReentrancyGuard, Pausable {
         emit SurveyEnded(_surveyId, survey.winningMovieId, survey.winningMovieVotes);
     }
 
+    /**
+     * @notice This function allows a user to vote on a movie in a survey.
+     * @dev Users can only vote once per survey. The voting is non-reentrant and paused while the contract is in paused state.
+     * @param _surveyId The ID of the survey where the vote is cast.
+     * @param _movieId The ID of the movie that the user votes for.
+     */
     function vote(uint256 _surveyId, uint256 _movieId) external nonReentrant whenNotPaused surveyExists(_surveyId) surveyOngoing(_surveyId) {
         Survey storage survey = surveys[_surveyId];
 
@@ -151,6 +176,12 @@ contract MovieSurveyCreator is ReentrancyGuard, Pausable {
         emit Voted(_surveyId, survey.movies[_movieId], msg.sender);
     }
 
+    /**
+     * @notice This function allows a user to get the details of a survey.
+     * @dev The survey must be ongoing.
+     * @param _surveyId The ID of the survey to get details of.
+     * Returns the details of the survey.
+     */
     function getSurvey(uint256 _surveyId) external view surveyExists(_surveyId) returns (address _surveyCreator, string memory _genre, string[] memory _movies, uint256 _startTime, uint256 _duration) {
         Survey storage survey = surveys[_surveyId];
 
@@ -159,17 +190,31 @@ contract MovieSurveyCreator is ReentrancyGuard, Pausable {
         return (survey.surveyCreator, survey.genre, survey.movies, survey.startTime, survey.duration);
     }
 
+    /**
+     * @notice This function allows a user to get the leading movie of a survey.
+     * @dev The survey must be ongoing.
+     * @param _surveyId The ID of the survey to get the leading movie of.
+     * @return Returns the leading movie and its votes count.
+     */
     function getCurrentLeadingMovie(uint256 _surveyId) external view surveyExists(_surveyId) surveyOngoing(_surveyId) returns (string memory, uint256) {
         Survey storage survey = surveys[_surveyId];
 
         return (survey.movies[survey.winningMovieId], survey.winningMovieVotes);
     }
 
+    /**
+     * @notice This function pauses all the functions of the contract except for the pause and unpause functions.
+     * @dev The contract owner is the only one who can call this function.
+     */
     function pause() external onlyContractOwner {
         _pause();
         emit ContractPaused(msg.sender);
     }
 
+    /**
+     * @notice This function unpauses the contract so that it can accept function calls again.
+     * @dev The contract owner is the only one who can call this function.
+     */
     function unpause() external onlyContractOwner {
         _unpause();
         emit ContractUnpaused(msg.sender);
