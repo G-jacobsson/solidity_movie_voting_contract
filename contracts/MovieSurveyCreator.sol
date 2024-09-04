@@ -90,7 +90,7 @@ contract MovieSurveyCreator is ReentrancyGuard, Pausable {
      * @param _duration The duration of the survey in seconds.
      * @return Returns the ID of the newly created survey.
      */
-    function createSurvey(string calldata _genre, string[] calldata _movies, uint256 _duration) external returns (uint256) {
+    function createSurvey(string calldata _genre, string[] calldata _movies, uint256 _duration) external whenNotPaused returns (uint256) {
         require(_movies.length > 0, "At least one movie is required for a survey.");
         require(_duration > 0 && _duration <= MAX_SURVEY_DURATION, "Invalid survey duration.");
 
@@ -122,7 +122,7 @@ contract MovieSurveyCreator is ReentrancyGuard, Pausable {
      * @dev The survey creator is the only one who can call this function. The survey start is paused while the contract is in paused state.
      * @param _surveyId The ID of the survey to start.
      */
-    function startSurvey(uint256 _surveyId) external onlySurveyCreator(_surveyId) whenNotPaused surveyExists(_surveyId) {
+    function startSurvey(uint256 _surveyId) external surveyExists(_surveyId) onlySurveyCreator(_surveyId) whenNotPaused {
         Survey storage survey = surveys[_surveyId];
 
         if (survey.status != SurveyStatus.Created) revert SurveyAlreadyStarted();
@@ -139,7 +139,7 @@ contract MovieSurveyCreator is ReentrancyGuard, Pausable {
      * @dev The survey creator is the only one who can call this function.
      * @param _surveyId The ID of the survey to end.
      */
-    function endSurvey(uint256 _surveyId) external onlySurveyCreator(_surveyId) surveyExists(_surveyId) {
+    function endSurvey(uint256 _surveyId) external surveyExists(_surveyId) whenNotPaused onlySurveyCreator(_surveyId) {
         Survey storage survey = surveys[_surveyId];
         if (survey.status != SurveyStatus.Ongoing) revert SurveyNotStarted();
 
@@ -182,12 +182,12 @@ contract MovieSurveyCreator is ReentrancyGuard, Pausable {
      * @param _surveyId The ID of the survey to get details of.
      * Returns the details of the survey.
      */
-    function getSurvey(uint256 _surveyId) external view surveyExists(_surveyId) returns (address _surveyCreator, string memory _genre, string[] memory _movies, uint256 _startTime, uint256 _duration) {
+    function getSurvey(uint256 _surveyId) external view surveyExists(_surveyId) returns (address _surveyCreator, string memory _genre, string[] memory _movies, uint256 _startTime, uint256 _duration, SurveyStatus _status) {
         Survey storage survey = surveys[_surveyId];
 
-        if (survey.status != SurveyStatus.Ongoing) revert SurveyNotStarted();
+        // if (survey.status != SurveyStatus.Ongoing) revert SurveyNotStarted();
 
-        return (survey.surveyCreator, survey.genre, survey.movies, survey.startTime, survey.duration);
+        return (survey.surveyCreator, survey.genre, survey.movies, survey.startTime, survey.duration, survey.status);
     }
 
     /**
