@@ -2,7 +2,7 @@
 pragma solidity ^0.8.26;
 
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import {Pausable} "@openzeppelin/contracts/security/Pausable.sol";
+import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
 
 /**
  * @title MovieSurveyCreator
@@ -140,5 +140,14 @@ contract MovieSurveyCreator is ReentrancyGuard, Pausable {
     function unpause() external onlyContractOwner {
         _unpause();
         emit ContractUnpaused(msg.sender);
+    }
+
+    // Fallback functions to revert any payments sent to the contract or any unknown function calls
+    receive() external payable {
+        revert("This contract does not accept payments");
+    }
+
+    fallback() external {
+        revert("Invalid function call");
     }
 }
