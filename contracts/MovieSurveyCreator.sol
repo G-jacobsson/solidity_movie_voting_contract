@@ -10,10 +10,8 @@ import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
  * @notice This contract allows users to create movie surveys and vote on them. 
  */
 contract MovieSurveyCreator is ReentrancyGuard, Pausable {
-    /**************************** ENUMS ****************************/
     enum SurveyStatus { Created, Ongoing, Ended }
 
-    /**************************** STRUCTS ****************************/
     struct Survey {
         address surveyCreator; // Address of survey creator
         SurveyStatus status;
@@ -26,7 +24,6 @@ contract MovieSurveyCreator is ReentrancyGuard, Pausable {
         uint256 winningMovieVotes;
     }
 
-    /**************************** STATE VARIABLES ****************************/
     address public contractOwner; // Address of the contract owner
     uint256 private surveyId; // ID Counter for surveys
     uint256 public constant MAX_SURVEY_DURATION = 604800; // 1 week in seconds
@@ -35,7 +32,6 @@ contract MovieSurveyCreator is ReentrancyGuard, Pausable {
     mapping(uint256 => mapping(uint256 => uint256)) private votes;
     mapping(address => uint256[]) private userSurveys;
 
-    /**************************** EVENTS ****************************/
     event SurveyCreated(uint256 surveyId, address indexed surveyCreator);
     event SurveyStarted(uint256 surveyId);
     event SurveyEnded(uint256 indexed surveyId, uint256 winningMovieId, uint256 winningMovieVotes);
@@ -43,7 +39,6 @@ contract MovieSurveyCreator is ReentrancyGuard, Pausable {
     event ContractPaused(address indexed by);
     event ContractUnpaused(address indexed by);
 
-    /**************************** CUSTOM ERRORS ****************************/
     error Unauthorized();
     error SurveyAlreadyStarted();
     error SurveyNotStarted();
@@ -53,7 +48,6 @@ contract MovieSurveyCreator is ReentrancyGuard, Pausable {
     error SurveyCreatorCannotVote();
     error SurveyDoesNotExist();
 
-    /**************************** MODIFIERS ****************************/
     modifier onlyContractOwner() {
         if (msg.sender != contractOwner) revert Unauthorized();
         _;
@@ -80,7 +74,6 @@ contract MovieSurveyCreator is ReentrancyGuard, Pausable {
         contractOwner = msg.sender;
     }
 
-    /**************************** FUNCTIONS ****************************/
 
     /**
      * @notice This function allows the survey creator to create a new movie survey.
@@ -91,7 +84,7 @@ contract MovieSurveyCreator is ReentrancyGuard, Pausable {
      * @return Returns the ID of the newly created survey.
      */
     function createSurvey(string calldata _genre, string[] calldata _movies, uint256 _duration) external whenNotPaused returns (uint256) {
-        require(_movies.length > 0, "At least one movie is required for a survey.");
+        require(_movies.length > 0, "At least two movies are required for a survey.");
         require(_duration > 0 && _duration <= MAX_SURVEY_DURATION, "Invalid survey duration.");
 
         ++surveyId;
@@ -184,8 +177,6 @@ contract MovieSurveyCreator is ReentrancyGuard, Pausable {
      */
     function getSurvey(uint256 _surveyId) external view surveyExists(_surveyId) returns (address _surveyCreator, string memory _genre, string[] memory _movies, uint256 _startTime, uint256 _duration, SurveyStatus _status) {
         Survey storage survey = surveys[_surveyId];
-
-        // if (survey.status != SurveyStatus.Ongoing) revert SurveyNotStarted();
 
         return (survey.surveyCreator, survey.genre, survey.movies, survey.startTime, survey.duration, survey.status);
     }

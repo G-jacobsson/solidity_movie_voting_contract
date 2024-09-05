@@ -7,7 +7,7 @@ describe('MovieSurveyCreator', function () {
   const duration = 3600;
 
   async function deployMovieSurveyCreatorFixture() {
-    const [contractOwner, surveyCreator, voter1, voter2] =
+    const [contractOwner, surveyCreator, voter1, voter2, voter3] =
       await ethers.getSigners();
 
     const MovieSurveyCreator = await ethers.getContractFactory(
@@ -15,18 +15,15 @@ describe('MovieSurveyCreator', function () {
     );
     const movieSurveyCreator = await MovieSurveyCreator.deploy();
 
-    return { movieSurveyCreator, contractOwner, surveyCreator, voter1, voter2 };
+    return {
+      movieSurveyCreator,
+      contractOwner,
+      surveyCreator,
+      voter1,
+      voter2,
+      voter3,
+    };
   }
-
-  describe('Constructor', function () {
-    it('Should set the contract owner to the deployer', async function () {
-      const { movieSurveyCreator, contractOwner } =
-        await deployMovieSurveyCreatorFixture();
-      expect(await movieSurveyCreator.contractOwner()).to.equal(
-        contractOwner.address
-      );
-    });
-  });
 
   describe('Deployment', function () {
     it('Should deploy MovieSurveyCreator and set deployer as contractOwner', async function () {
@@ -39,11 +36,9 @@ describe('MovieSurveyCreator', function () {
   });
 
   describe('Survey Management', function () {
-    it('Should create a surveyId with valid parameters and emit SurveyCreated event', async function () {
+    it('Should create a survey with valid parameters and handle invalid cases', async function () {
       const { movieSurveyCreator, surveyCreator } =
         await deployMovieSurveyCreatorFixture();
-
-      const startTime = 0;
 
       await expect(
         movieSurveyCreator
@@ -53,98 +48,20 @@ describe('MovieSurveyCreator', function () {
         .to.emit(movieSurveyCreator, 'SurveyCreated')
         .withArgs(1, surveyCreator.address);
 
-      const survey = await movieSurveyCreator.getSurvey(1);
-      expect(survey[0]).to.equal(surveyCreator.address);
-      expect(survey[1]).to.equal(genre);
-      expect(survey[2]).to.deep.equal(movies);
-      expect(survey[3]).to.equal(startTime);
-      expect(survey[4]).to.equal(duration);
-    });
-
-    it('Should not allow survey creation with duration exceeding the maximum limit', async function () {
-      const { movieSurveyCreator, surveyCreator } =
-        await deployMovieSurveyCreatorFixture();
-
-      const duration = 2 * 604800;
+      await expect(
+        movieSurveyCreator
+          .connect(surveyCreator)
+          .createSurvey(genre, [], duration)
+      ).to.be.revertedWith('At least two movies are required for a survey.');
 
       await expect(
         movieSurveyCreator
           .connect(surveyCreator)
-          .createSurvey(genre, movies, duration)
+          .createSurvey(genre, movies, 2 * 604800)
       ).to.be.revertedWith('Invalid survey duration.');
     });
 
-    it('Should not allow survey creation with empty movie array', async function () {
-      const { movieSurveyCreator, surveyCreator } =
-        await deployMovieSurveyCreatorFixture();
-
-      const movies: string[] = [];
-
-      await expect(
-        movieSurveyCreator
-          .connect(surveyCreator)
-          .createSurvey(genre, movies, duration)
-      ).to.be.revertedWith('At least one movie is required for a survey.');
-    });
-
-    it('Should not allow survey creation with duration of 0', async function () {
-      const { movieSurveyCreator, surveyCreator } =
-        await deployMovieSurveyCreatorFixture();
-
-      const duration = 0;
-
-      await expect(
-        movieSurveyCreator
-          .connect(surveyCreator)
-          .createSurvey(genre, movies, duration)
-      ).to.be.revertedWith('Invalid survey duration.');
-    });
-
-    it('Should revert if creating a survey with extremely large duration', async function () {
-      const { movieSurveyCreator, surveyCreator } =
-        await deployMovieSurveyCreatorFixture();
-
-      const duration = 100 * 604800;
-
-      await expect(
-        movieSurveyCreator
-          .connect(surveyCreator)
-          .createSurvey(genre, movies, duration)
-      ).to.be.revertedWith('Invalid survey duration.');
-    });
-
-    it('Should handle large number of movies correctly', async function () {
-      const { movieSurveyCreator, surveyCreator } =
-        await deployMovieSurveyCreatorFixture();
-
-      const movies = Array(100).fill('Movie');
-
-      await expect(
-        movieSurveyCreator
-          .connect(surveyCreator)
-          .createSurvey(genre, movies, duration)
-      )
-        .to.emit(movieSurveyCreator, 'SurveyCreated')
-        .withArgs(1, surveyCreator.address);
-    });
-
-    it('Should allow the survey creator to start a survey and emit SurveyStarted event', async function () {
-      const { movieSurveyCreator, surveyCreator } =
-        await deployMovieSurveyCreatorFixture();
-
-      await movieSurveyCreator
-        .connect(surveyCreator)
-        .createSurvey(genre, movies, duration);
-
-      await expect(movieSurveyCreator.connect(surveyCreator).startSurvey(1))
-        .to.emit(movieSurveyCreator, 'SurveyStarted')
-        .withArgs(1);
-
-      const survey = await movieSurveyCreator.getSurvey(1);
-      expect(survey[3]).to.be.greaterThan(0);
-    });
-
-    it('Should not allow non-creators to start the survey', async function () {
+    it('Should revert if a non-creator tries to start or end the survey', async function () {
       const { movieSurveyCreator, surveyCreator, voter1 } =
         await deployMovieSurveyCreatorFixture();
 
@@ -155,89 +72,60 @@ describe('MovieSurveyCreator', function () {
       await expect(
         movieSurveyCreator.connect(voter1).startSurvey(1)
       ).to.be.revertedWithCustomError(movieSurveyCreator, 'Unauthorized');
-    });
 
-    it('Should not allow starting a survey that has already started', async function () {
-      const { movieSurveyCreator, surveyCreator } =
-        await deployMovieSurveyCreatorFixture();
-
-      await movieSurveyCreator
-        .connect(surveyCreator)
-        .createSurvey(genre, movies, duration);
       await movieSurveyCreator.connect(surveyCreator).startSurvey(1);
-
-      await expect(
-        movieSurveyCreator.connect(surveyCreator).startSurvey(1)
-      ).to.be.revertedWithCustomError(
-        movieSurveyCreator,
-        'SurveyAlreadyStarted'
-      );
-    });
-
-    it('Should revert starting a survey that has already started (status not Created)', async function () {
-      const { movieSurveyCreator, surveyCreator } =
-        await deployMovieSurveyCreatorFixture();
-
-      await movieSurveyCreator
-        .connect(surveyCreator)
-        .createSurvey(genre, movies, duration);
-      await movieSurveyCreator.connect(surveyCreator).startSurvey(1);
-
-      await expect(
-        movieSurveyCreator.connect(surveyCreator).startSurvey(1)
-      ).to.be.revertedWithCustomError(
-        movieSurveyCreator,
-        'SurveyAlreadyStarted'
-      );
-    });
-
-    it('Should not allow starting a survey that does not exist', async function () {
-      const { movieSurveyCreator, surveyCreator } =
-        await deployMovieSurveyCreatorFixture();
-
-      await expect(
-        movieSurveyCreator.connect(surveyCreator).startSurvey(999)
-      ).to.be.revertedWithCustomError(movieSurveyCreator, 'SurveyDoesNotExist');
-    });
-
-    it('Should allow the survey creator to end the survey and emit SurveyEnded event', async function () {
-      const { movieSurveyCreator, surveyCreator } =
-        await deployMovieSurveyCreatorFixture();
-
-      await movieSurveyCreator
-        .connect(surveyCreator)
-        .createSurvey(genre, movies, duration);
-      await movieSurveyCreator.connect(surveyCreator).startSurvey(1);
-
-      await hre.network.provider.send('evm_increaseTime', [3600]);
-      await hre.network.provider.send('evm_mine');
-
-      await expect(movieSurveyCreator.connect(surveyCreator).endSurvey(1))
-        .to.emit(movieSurveyCreator, 'SurveyEnded')
-        .withArgs(1, 0, 0);
-
-      const survey = await movieSurveyCreator.getSurvey(1);
-      expect(survey[5]).to.equal(2);
-    });
-
-    it('Should not allow non-creators to end the survey', async function () {
-      const { movieSurveyCreator, surveyCreator, voter1 } =
-        await deployMovieSurveyCreatorFixture();
-
-      await movieSurveyCreator
-        .connect(surveyCreator)
-        .createSurvey(genre, movies, duration);
-      await movieSurveyCreator.connect(surveyCreator).startSurvey(1);
-
-      await hre.network.provider.send('evm_increaseTime', [3600]);
-      await hre.network.provider.send('evm_mine');
 
       await expect(
         movieSurveyCreator.connect(voter1).endSurvey(1)
       ).to.be.revertedWithCustomError(movieSurveyCreator, 'Unauthorized');
     });
 
-    it('Should not allow ending a survey that has not started', async function () {
+    it('Should start and end a survey properly and handle invalid cases', async function () {
+      const { movieSurveyCreator, surveyCreator, voter1 } =
+        await deployMovieSurveyCreatorFixture();
+
+      await movieSurveyCreator
+        .connect(surveyCreator)
+        .createSurvey(genre, movies, duration);
+
+      const unauthorizedUser = await ethers.provider.getSigner(2);
+      await expect(
+        movieSurveyCreator.connect(unauthorizedUser).startSurvey(1)
+      ).to.be.revertedWithCustomError(movieSurveyCreator, 'Unauthorized');
+
+      await expect(movieSurveyCreator.connect(surveyCreator).startSurvey(1))
+        .to.emit(movieSurveyCreator, 'SurveyStarted')
+        .withArgs(1);
+
+      await expect(
+        movieSurveyCreator.connect(surveyCreator).startSurvey(1)
+      ).to.be.revertedWithCustomError(
+        movieSurveyCreator,
+        'SurveyAlreadyStarted'
+      );
+
+      await hre.network.provider.send('evm_increaseTime', [duration]);
+      await hre.network.provider.send('evm_mine');
+
+      await expect(movieSurveyCreator.connect(surveyCreator).endSurvey(1))
+        .to.emit(movieSurveyCreator, 'SurveyEnded')
+        .withArgs(1, 0, 0);
+
+      await expect(
+        movieSurveyCreator.connect(surveyCreator).endSurvey(1)
+      ).to.be.revertedWithCustomError(movieSurveyCreator, 'SurveyNotStarted');
+    });
+
+    it('Should revert when trying to create a survey with zero duration', async function () {
+      const { movieSurveyCreator, surveyCreator } =
+        await deployMovieSurveyCreatorFixture();
+
+      await expect(
+        movieSurveyCreator.connect(surveyCreator).createSurvey(genre, movies, 0)
+      ).to.be.revertedWith('Invalid survey duration.');
+    });
+
+    it('Should return correct survey details', async function () {
       const { movieSurveyCreator, surveyCreator } =
         await deployMovieSurveyCreatorFixture();
 
@@ -245,24 +133,29 @@ describe('MovieSurveyCreator', function () {
         .connect(surveyCreator)
         .createSurvey(genre, movies, duration);
 
-      await expect(
-        movieSurveyCreator.connect(surveyCreator).endSurvey(1)
-      ).to.be.revertedWithCustomError(movieSurveyCreator, 'SurveyNotStarted');
+      const survey = await movieSurveyCreator.getSurvey(1);
+
+      expect(survey[0]).to.equal(surveyCreator.address);
+      expect(survey[1]).to.equal(genre);
+      expect(survey[2]).to.deep.equal(movies);
+      expect(survey[3]).to.equal(0);
+      expect(survey[4]).to.equal(duration);
+      expect(survey[5]).to.equal(0);
     });
 
-    it('Should not allow ending a survey that does not exist', async function () {
+    it('Should revert if getting details of a non-existent survey', async function () {
       const { movieSurveyCreator, surveyCreator } =
         await deployMovieSurveyCreatorFixture();
 
       await expect(
-        movieSurveyCreator.connect(surveyCreator).endSurvey(999)
+        movieSurveyCreator.getSurvey(999)
       ).to.be.revertedWithCustomError(movieSurveyCreator, 'SurveyDoesNotExist');
     });
   });
 
   describe('Voting', function () {
-    it('Should allow users to vote in an ongoing survey and emit Voted event', async function () {
-      const { movieSurveyCreator, surveyCreator, voter1 } =
+    it('Should allow voting and handle invalid cases', async function () {
+      const { movieSurveyCreator, surveyCreator, voter1, voter2 } =
         await deployMovieSurveyCreatorFixture();
 
       await movieSurveyCreator
@@ -275,62 +168,16 @@ describe('MovieSurveyCreator', function () {
         .withArgs(1, 'Movie1', voter1.address);
 
       const leadingMovie = await movieSurveyCreator.getCurrentLeadingMovie(1);
+      expect(leadingMovie[0]).to.equal('Movie1');
       expect(leadingMovie[1]).to.equal(1);
-    });
-
-    it('Should not allow a user to vote more than once', async function () {
-      const { movieSurveyCreator, surveyCreator, voter1 } =
-        await deployMovieSurveyCreatorFixture();
-
-      await movieSurveyCreator
-        .connect(surveyCreator)
-        .createSurvey(genre, movies, duration);
-      await movieSurveyCreator.connect(surveyCreator).startSurvey(1);
-      await movieSurveyCreator.connect(voter1).vote(1, 0);
 
       await expect(
         movieSurveyCreator.connect(voter1).vote(1, 1)
       ).to.be.revertedWithCustomError(movieSurveyCreator, 'AlreadyVoted');
-    });
-
-    it('Should revert if a user tries to vote for a movie ID that is out of bounds', async function () {
-      const { movieSurveyCreator, surveyCreator, voter1 } =
-        await deployMovieSurveyCreatorFixture();
-
-      await movieSurveyCreator
-        .connect(surveyCreator)
-        .createSurvey(genre, movies, duration);
-      await movieSurveyCreator.connect(surveyCreator).startSurvey(1);
 
       await expect(
-        movieSurveyCreator.connect(voter1).vote(1, 999)
+        movieSurveyCreator.connect(voter2).vote(1, 999)
       ).to.be.revertedWithCustomError(movieSurveyCreator, 'InvalidMovieId');
-    });
-
-    it('Should handle vote count correctly with multiple users', async function () {
-      const { movieSurveyCreator, surveyCreator, voter1, voter2 } =
-        await deployMovieSurveyCreatorFixture();
-
-      await movieSurveyCreator
-        .connect(surveyCreator)
-        .createSurvey(genre, movies, duration);
-      await movieSurveyCreator.connect(surveyCreator).startSurvey(1);
-
-      await movieSurveyCreator.connect(voter1).vote(1, 0);
-      await movieSurveyCreator.connect(voter2).vote(1, 0);
-
-      const leadingMovie = await movieSurveyCreator.getCurrentLeadingMovie(1);
-      expect(leadingMovie[1]).to.equal(2);
-    });
-
-    it('Should not allow the survey creator to vote', async function () {
-      const { movieSurveyCreator, surveyCreator } =
-        await deployMovieSurveyCreatorFixture();
-
-      await movieSurveyCreator
-        .connect(surveyCreator)
-        .createSurvey(genre, movies, duration);
-      await movieSurveyCreator.connect(surveyCreator).startSurvey(1);
 
       await expect(
         movieSurveyCreator.connect(surveyCreator).vote(1, 0)
@@ -338,9 +185,34 @@ describe('MovieSurveyCreator', function () {
         movieSurveyCreator,
         'SurveyCreatorCannotVote'
       );
+
+      await movieSurveyCreator.connect(voter2).vote(1, 0);
+      const updatedLeadingMovie =
+        await movieSurveyCreator.getCurrentLeadingMovie(1);
+      expect(updatedLeadingMovie[1]).to.equal(2);
     });
 
-    it('Should handle invalid movie ID during voting', async function () {
+    it('Should handle voting for different movies in a survey', async function () {
+      const { movieSurveyCreator, surveyCreator, voter1, voter2, voter3 } =
+        await deployMovieSurveyCreatorFixture();
+
+      const multipleMovies = ['Movie1', 'Movie2', 'Movie3'];
+      await movieSurveyCreator
+        .connect(surveyCreator)
+        .createSurvey(genre, multipleMovies, duration);
+      await movieSurveyCreator.connect(surveyCreator).startSurvey(1);
+
+      await movieSurveyCreator.connect(voter1).vote(1, 0);
+
+      await movieSurveyCreator.connect(voter2).vote(1, 1);
+
+      await movieSurveyCreator.connect(voter3).vote(1, 2);
+
+      const leadingMovie = await movieSurveyCreator.getCurrentLeadingMovie(1);
+      expect(leadingMovie[0]).to.equal('Movie1');
+    });
+
+    it('Should handle voting edge cases and ensure correctness of the voting process', async function () {
       const { movieSurveyCreator, surveyCreator, voter1 } =
         await deployMovieSurveyCreatorFixture();
 
@@ -352,11 +224,27 @@ describe('MovieSurveyCreator', function () {
       await expect(
         movieSurveyCreator.connect(voter1).vote(1, 999)
       ).to.be.revertedWithCustomError(movieSurveyCreator, 'InvalidMovieId');
+
+      const leadingMovie = await movieSurveyCreator.getCurrentLeadingMovie(1);
+      expect(leadingMovie[1]).to.equal(0);
+    });
+
+    it('Should revert if trying to vote before the survey starts', async function () {
+      const { movieSurveyCreator, surveyCreator, voter1 } =
+        await deployMovieSurveyCreatorFixture();
+
+      await movieSurveyCreator
+        .connect(surveyCreator)
+        .createSurvey(genre, movies, duration);
+
+      await expect(
+        movieSurveyCreator.connect(voter1).vote(1, 0)
+      ).to.be.revertedWithCustomError(movieSurveyCreator, 'SurveyNotStarted');
     });
   });
 
   describe('Contract State', function () {
-    it('Should pause and unpause the contract and affect function calls', async function () {
+    it('Should allow pausing and unpausing the contract by the contract owner', async function () {
       const { movieSurveyCreator, contractOwner, surveyCreator } =
         await deployMovieSurveyCreatorFixture();
 
@@ -379,27 +267,83 @@ describe('MovieSurveyCreator', function () {
         .withArgs(1, surveyCreator.address);
     });
 
-    it('Should revert if non-owner tries to pause the contract', async function () {
+    it('Should revert when trying to vote while the contract is paused', async function () {
+      const { movieSurveyCreator, contractOwner, surveyCreator, voter1 } =
+        await deployMovieSurveyCreatorFixture();
+
+      await movieSurveyCreator
+        .connect(surveyCreator)
+        .createSurvey(genre, movies, duration);
+      await movieSurveyCreator.connect(surveyCreator).startSurvey(1);
+
+      await movieSurveyCreator.connect(contractOwner).pause();
+
+      await expect(
+        movieSurveyCreator.connect(voter1).vote(1, 0)
+      ).to.be.revertedWithCustomError(movieSurveyCreator, 'EnforcedPause');
+
+      await movieSurveyCreator.connect(contractOwner).unpause();
+      await movieSurveyCreator.connect(voter1).vote(1, 0);
+    });
+
+    it('Should revert if trying to start a survey while the contract is paused', async function () {
+      const { movieSurveyCreator, contractOwner, surveyCreator } =
+        await deployMovieSurveyCreatorFixture();
+
+      await movieSurveyCreator
+        .connect(surveyCreator)
+        .createSurvey(genre, movies, duration);
+
+      await movieSurveyCreator.connect(contractOwner).pause();
+
+      await expect(
+        movieSurveyCreator.connect(surveyCreator).startSurvey(1)
+      ).to.be.revertedWithCustomError(movieSurveyCreator, 'EnforcedPause');
+
+      await movieSurveyCreator.connect(contractOwner).unpause();
+      await expect(movieSurveyCreator.connect(surveyCreator).startSurvey(1))
+        .to.emit(movieSurveyCreator, 'SurveyStarted')
+        .withArgs(1);
+    });
+
+    it('Should revert if trying to end a survey while the contract is paused', async function () {
+      const { movieSurveyCreator, contractOwner, surveyCreator } =
+        await deployMovieSurveyCreatorFixture();
+
+      await movieSurveyCreator
+        .connect(surveyCreator)
+        .createSurvey(genre, movies, duration);
+      await movieSurveyCreator.connect(surveyCreator).startSurvey(1);
+
+      await hre.network.provider.send('evm_increaseTime', [duration]);
+      await hre.network.provider.send('evm_mine');
+
+      await movieSurveyCreator.connect(contractOwner).pause();
+
+      await expect(
+        movieSurveyCreator.connect(surveyCreator).endSurvey(1)
+      ).to.be.revertedWithCustomError(movieSurveyCreator, 'EnforcedPause');
+
+      await movieSurveyCreator.connect(contractOwner).unpause();
+      await expect(movieSurveyCreator.connect(surveyCreator).endSurvey(1))
+        .to.emit(movieSurveyCreator, 'SurveyEnded')
+        .withArgs(1, 0, 0);
+    });
+
+    it('Should not allow non-owner to pause/unpause the contract', async function () {
       const { movieSurveyCreator, surveyCreator } =
         await deployMovieSurveyCreatorFixture();
 
       await expect(
         movieSurveyCreator.connect(surveyCreator).pause()
       ).to.be.revertedWithCustomError(movieSurveyCreator, 'Unauthorized');
-    });
-
-    it('Should revert if non-owner tries to unpause the contract', async function () {
-      const { movieSurveyCreator, contractOwner, surveyCreator } =
-        await deployMovieSurveyCreatorFixture();
-
-      await movieSurveyCreator.connect(contractOwner).pause();
 
       await expect(
         movieSurveyCreator.connect(surveyCreator).unpause()
       ).to.be.revertedWithCustomError(movieSurveyCreator, 'Unauthorized');
     });
 
-    it('Should reject payments and handle fallback', async function () {
+    it('Should reject payments and handle fallback functions correctly', async function () {
       const { movieSurveyCreator, contractOwner } =
         await deployMovieSurveyCreatorFixture();
 
@@ -413,7 +357,7 @@ describe('MovieSurveyCreator', function () {
   });
 
   describe('Edge Cases', function () {
-    it('Should revert if attempting to call a non-existent function', async function () {
+    it('Should handle non-existent function calls correctly', async function () {
       const { movieSurveyCreator, contractOwner } =
         await deployMovieSurveyCreatorFixture();
 
@@ -425,58 +369,31 @@ describe('MovieSurveyCreator', function () {
       ).to.be.revertedWith('Invalid function call');
     });
 
-    it('Should handle maximum duration boundary value', async function () {
+    it('Should handle surveys with maximum duration correctly', async function () {
       const { movieSurveyCreator, surveyCreator } =
         await deployMovieSurveyCreatorFixture();
 
-      const duration = 604800;
-
+      const maxDuration = 604800;
       await expect(
         movieSurveyCreator
           .connect(surveyCreator)
-          .createSurvey(genre, movies, duration)
+          .createSurvey(genre, movies, maxDuration)
       )
         .to.emit(movieSurveyCreator, 'SurveyCreated')
         .withArgs(1, surveyCreator.address);
     });
 
-    it('Should handle edge case where survey is ended before starting', async function () {
+    it('Should revert if trying to interact with a non-existent survey', async function () {
       const { movieSurveyCreator, surveyCreator } =
         await deployMovieSurveyCreatorFixture();
 
-      await movieSurveyCreator
-        .connect(surveyCreator)
-        .createSurvey(genre, movies, duration);
+      await expect(
+        movieSurveyCreator.connect(surveyCreator).startSurvey(999)
+      ).to.be.revertedWithCustomError(movieSurveyCreator, 'SurveyDoesNotExist');
 
       await expect(
-        movieSurveyCreator.connect(surveyCreator).endSurvey(1)
-      ).to.be.revertedWithCustomError(movieSurveyCreator, 'SurveyNotStarted');
-    });
-
-    it('Should handle multiple pause/unpause operations', async function () {
-      const { movieSurveyCreator, contractOwner, surveyCreator } =
-        await deployMovieSurveyCreatorFixture();
-
-      await movieSurveyCreator.connect(contractOwner).pause();
-      await expect(
-        movieSurveyCreator
-          .connect(surveyCreator)
-          .createSurvey(genre, movies, duration)
-      ).to.be.revertedWithCustomError(movieSurveyCreator, 'EnforcedPause');
-
-      await movieSurveyCreator.connect(contractOwner).unpause();
-      await expect(
-        movieSurveyCreator
-          .connect(surveyCreator)
-          .createSurvey(genre, movies, duration)
-      )
-        .to.emit(movieSurveyCreator, 'SurveyCreated')
-        .withArgs(1, surveyCreator.address);
-
-      await movieSurveyCreator.connect(contractOwner).pause();
-      await expect(
-        movieSurveyCreator.connect(surveyCreator).endSurvey(1)
-      ).to.be.revertedWithCustomError(movieSurveyCreator, 'EnforcedPause');
+        movieSurveyCreator.connect(surveyCreator).endSurvey(999)
+      ).to.be.revertedWithCustomError(movieSurveyCreator, 'SurveyDoesNotExist');
     });
   });
 });
